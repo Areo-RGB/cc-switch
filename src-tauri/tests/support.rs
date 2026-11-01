@@ -43,6 +43,8 @@ pub fn reset_test_fs() {
         ".claude",
         ".codex",
         ".cc-switch",
+        ".cc-switch-desk",
+        ".agents",
         ".gemini",
         ".grok",
         ".config",
@@ -68,7 +70,6 @@ pub fn reset_test_fs() {
 #[allow(dead_code)]
 pub fn enable_codex_official_auth_preservation() {
     update_settings(AppSettings {
-        preserve_codex_official_auth_on_switch: true,
         ..Default::default()
     })
     .expect("enable Codex official auth preservation");

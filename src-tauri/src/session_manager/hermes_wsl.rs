@@ -11,7 +11,7 @@ const MAX_FRAME: u64 = 1024 * 1024;
 
 /// Decode bounded JSON-string frames as a byte stream. Deserializing directly
 /// avoids retaining another complete encoded copy of a large raw transcript.
-/// Projection and duplicate selection remain shared with the native provider.
+/// Projection and duplicate selection remain shared with the native client.
 struct FramedReader<R> {
     source: BufReader<R>,
     frame: io::Cursor<Vec<u8>>,
@@ -59,7 +59,7 @@ impl<R: Read> Read for FramedReader<R> {
 }
 
 /// Only the two WSL UNC hosts are routed to a Linux reader. Keep the public
-/// source reference as UNC so normal provider/path validation still applies.
+/// source reference as UNC so normal client/path validation still applies.
 fn target(path: &Path) -> Option<(String, String)> {
     let text = path.to_str()?;
     let rest = text

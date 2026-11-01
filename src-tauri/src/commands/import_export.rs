@@ -11,7 +11,6 @@ use crate::commands::sync_support::{
 use crate::database::backup::BackupEntry;
 use crate::database::Database;
 use crate::error::AppError;
-use crate::services::provider::ProviderService;
 use crate::services::skill::skill_state_write_guard;
 use crate::services::sync_protocol::sync_mutex;
 use crate::store::AppState;
@@ -75,22 +74,6 @@ pub async fn import_config_from_file(
     })
     .await
     .map_err(|e| format!("导入配置失败: {e}"))?
-    .map_err(|e: AppError| e.to_string())
-}
-
-#[tauri::command]
-pub async fn sync_current_providers_live(state: State<'_, AppState>) -> Result<Value, String> {
-    let db = state.db.clone();
-    tauri::async_runtime::spawn_blocking(move || {
-        let app_state = AppState::new(db);
-        ProviderService::sync_current_to_live(&app_state)?;
-        Ok::<_, AppError>(json!({
-            "success": true,
-            "message": "Live configuration synchronized"
-        }))
-    })
-    .await
-    .map_err(|e| format!("同步当前供应商失败: {e}"))?
     .map_err(|e: AppError| e.to_string())
 }
 
@@ -208,36 +191,6 @@ pub fn rename_db_backup(
 #[tauri::command]
 pub fn delete_db_backup(filename: String) -> Result<(), String> {
     Database::delete_backup(&filename).map_err(|e| e.to_string())
-}
-
-// ─── Backup storage overview ─────────────────────────────────
-
-/// 列出本机各类备份的位置与大小
-#[tauri::command]
-pub async fn list_backup_locations(
-) -> Result<Vec<crate::services::backup_storage::BackupLocation>, String> {
-    tauri::async_runtime::spawn_blocking(crate::services::backup_storage::list_locations)
-        .await
-        .map_err(|e| e.to_string())
-}
-
-/// 删除一类备份（只认类别 id），返回释放的字节数
-#[tauri::command]
-pub async fn delete_backup_location(id: String) -> Result<u64, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        crate::services::backup_storage::delete_location(&id)
-    })
-    .await
-    .map_err(|e| e.to_string())?
-    .map_err(|e| e.to_string())
-}
-
-/// 在文件管理器中显示一类备份所在的目录
-#[tauri::command]
-pub async fn reveal_backup_location(id: String) -> Result<bool, String> {
-    let dir = crate::services::backup_storage::location_dir(&id).map_err(|e| e.to_string())?;
-    tauri_plugin_opener::reveal_item_in_dir(&dir).map_err(|e| format!("打开文件夹失败: {e}"))?;
-    Ok(true)
 }
 
 #[cfg(test)]

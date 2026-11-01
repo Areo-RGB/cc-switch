@@ -1,5 +1,4 @@
-//! Request metadata shared by Kimi's session reader and usage importer.
-use crate::services::session_usage::estimated_latency_ms;
+//! Request metadata shared by Kimi's session reader and transcript parser.
 use serde_json::Value;
 use std::collections::HashMap;
 
@@ -32,6 +31,11 @@ pub(crate) struct RequestIndex {
     agent: Option<String>,
     step: Option<Step>,
     messages: HashMap<String, RequestInfo>,
+}
+
+fn estimated_latency_ms(start_ms: i64, end_ms: i64) -> Option<i64> {
+    let latency = end_ms.checked_sub(start_ms)?;
+    (0..=3_600_000).contains(&latency).then_some(latency)
 }
 
 pub(crate) fn timestamp_ms(value: &Value) -> Option<i64> {
@@ -135,8 +139,12 @@ impl RequestIndex {
                         let native_latency = first_token_ms
                             .zip(duration_ms(&event["llmStreamDurationMs"]))
                             .and_then(|(first, stream)| estimated_latency_ms(0, first + stream));
+                        // If native timing fields are present but malformed, do not silently
+                        // replace them with the broader wall-clock duration.
+                        let has_native_timing = event.get("llmFirstTokenLatencyMs").is_some()
+                            || event.get("llmStreamDurationMs").is_some();
                         let end_ms = step.response_ms.or_else(|| {
-                            (!step.has_tools)
+                            (!step.has_tools && !has_native_timing)
                                 .then(|| timestamp_ms(&record["time"]))
                                 .flatten()
                         });

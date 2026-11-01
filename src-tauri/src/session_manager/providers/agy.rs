@@ -14,9 +14,8 @@ use std::{
 };
 
 /// Antigravity CLI keeps sessions in `~/.gemini/antigravity-cli/brain`, while the IDE writes the
-/// same layout to `~/.gemini/antigravity/brain`. API-key providers run agy with a private
-/// `--gemini_dir` (`~/.cc-switch/agy/<provider>/`), so their sessions live under that directory's
-/// `antigravity-cli/brain`. All of them are scanned.
+/// same layout to `~/.gemini/antigravity/brain`. Legacy private roots under
+/// `~/.cc-switch-desk/agy/` are also scanned so existing transcripts remain visible.
 pub fn session_roots() -> Vec<PathBuf> {
     session_sources()
         .into_iter()
@@ -66,7 +65,7 @@ pub fn scan_sessions() -> Vec<SessionMeta> {
 
 /// Missing roots are tolerated; a session id found in several roots is reported once. The first
 /// root wins, except that an index-only entry yields to a later root holding the transcript: the
-/// IDE can continue a conversation the CLI index also lists, and only the transcript has usage.
+/// IDE can continue a conversation the CLI index also lists, and only the transcript has content.
 fn scan_roots(sources: &[(PathBuf, Option<PathBuf>)]) -> Vec<SessionMeta> {
     let mut seen = std::collections::HashMap::new();
     let mut sessions: Vec<SessionMeta> = Vec::new();

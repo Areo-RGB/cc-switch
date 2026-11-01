@@ -309,77 +309,14 @@ pub fn get_claude_settings_path() -> PathBuf {
     settings
 }
 
-/// 获取应用配置目录路径 (~/.cc-switch)
+/// Get the fork-private data directory (`~/.cc-switch-desk`).
 pub fn get_app_config_dir() -> PathBuf {
-    if let Some(custom) = crate::app_store::get_app_config_dir_override() {
-        return custom;
-    }
-
-    let default_dir = get_home_dir().join(".cc-switch");
-
-    // 兼容 v3.10.3：当用户环境存在 `HOME` 且与真实用户目录不同，
-    // v3.10.3 可能在 `HOME/.cc-switch/` 下创建/使用了数据库。
-    // 这里仅在“默认位置没有数据库”时回退到旧位置，避免再次出现“供应商消失”问题，
-    // 同时也避免新安装因为 `HOME` 被设置而写入非预期路径。
-    //
-    // `CC_SWITCH_TEST_HOME` 是测试用的显式 home 覆盖，必须在这里短路：测试的临时
-    // 目录本来就不带 cc-switch.db，若不先返回，下面的 HOME 回退会把测试指向真实
-    // 用户库（Windows 上 runner 的 HOME 下常常确实有该 db），既污染用户数据，又让
-    // 隔离测试读到别人写的状态而失败。
-    #[cfg(windows)]
-    if test_home_override().is_some() {
-        return default_dir;
-    }
-
-    #[cfg(windows)]
-    {
-        let default_db = default_dir.join("cc-switch.db");
-        if !default_db.exists() {
-            if let Ok(home_env) = std::env::var("HOME") {
-                let trimmed = home_env.trim();
-                if !trimmed.is_empty() {
-                    let legacy_dir = PathBuf::from(trimmed).join(".cc-switch");
-                    if legacy_dir.join("cc-switch.db").exists() {
-                        log::info!(
-                            "Detected v3.10.3 legacy database at {}, using it instead of {}",
-                            legacy_dir.display(),
-                            default_dir.display()
-                        );
-                        return legacy_dir;
-                    }
-                }
-            }
-        }
-    }
-
-    default_dir
+    get_home_dir().join(".cc-switch-desk")
 }
 
 /// 获取应用配置文件路径
 pub fn get_app_config_path() -> PathBuf {
     get_app_config_dir().join("config.json")
-}
-
-/// 清理供应商名称，确保文件名安全
-#[allow(dead_code)]
-pub fn sanitize_provider_name(name: &str) -> String {
-    name.chars()
-        .map(|c| match c {
-            '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*' => '-',
-            _ => c,
-        })
-        .collect::<String>()
-        .to_lowercase()
-}
-
-/// 获取供应商配置文件路径
-#[allow(dead_code)]
-pub fn get_provider_config_path(provider_id: &str, provider_name: Option<&str>) -> PathBuf {
-    let base_name = provider_name
-        .map(sanitize_provider_name)
-        .unwrap_or_else(|| sanitize_provider_name(provider_id));
-
-    get_claude_config_dir().join(format!("settings-{base_name}.json"))
 }
 
 /// 读取 JSON 配置文件
@@ -1018,7 +955,7 @@ mod tests {
     fn test_home_short_circuits_the_home_legacy_fallback() {
         // 进程级环境变量的读写必须与同样改它们的测试互斥。锁是模块级共享的
         // （写成测试函数体内的 static 只能锁住自己，等于没锁），见
-        // `proxy::http_client` 里同一套 env_lock() 用法。
+        // Keep the environment snapshot stable for this configuration read.
         let _guard = env_lock().lock().unwrap_or_else(|e| e.into_inner());
 
         // 假装 HOME 指向另一处，并且那里有一份 db——正是会触发回退的形状

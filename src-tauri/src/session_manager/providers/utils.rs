@@ -11,7 +11,7 @@ use serde_json::Value;
 use crate::session_manager::model::ContentRef;
 use crate::session_manager::SessionMeta;
 
-/// Maximum number of characters for session titles (shared across providers).
+/// Maximum number of characters for session titles (shared across clients).
 pub const TITLE_MAX_CHARS: usize = 80;
 
 /// 会话文件解析结果的缓存：按文件的修改时间和大小判断有没有变，没变就复用上次

@@ -1,7 +1,6 @@
 //! 数据库模块 - SQLite 数据持久化
 //!
 //! 此模块提供应用的核心数据存储功能，包括：
-//! - 供应商配置管理
 //! - MCP 服务器配置
 //! - 提示词管理
 //! - Skills 管理
@@ -16,7 +15,6 @@
 //! ├── backup.rs     - SQL 导入导出 + 快照备份
 //! ├── migration.rs  - JSON → SQLite 数据迁移
 //! └── dao/          - 数据访问对象
-//!     ├── providers.rs
 //!     ├── mcp.rs
 //!     ├── prompts.rs
 //!     ├── skills.rs
@@ -32,14 +30,6 @@ mod schema;
 mod tests;
 
 // DAO 类型导出供外部使用
-pub use dao::custom_icons::{CustomIconEntry, CUSTOM_ICONS_KEY};
-pub(crate) use dao::providers_seed::{
-    is_official_seed_id, CLAUDE_DESKTOP_OFFICIAL_PROVIDER_ID, CODEX_OFFICIAL_PROVIDER_ID,
-    GROKBUILD_OFFICIAL_PROVIDER_ID,
-};
-pub(crate) use dao::proxy::{PRICING_SOURCE_REQUEST, PRICING_SOURCE_RESPONSE};
-pub use dao::FailoverQueueItem;
-pub use dao::Profile;
 
 use crate::config::get_app_config_dir;
 use crate::error::AppError;
@@ -51,7 +41,7 @@ use std::sync::Mutex;
 
 /// 当前 Schema 版本号
 /// 每次修改表结构时递增，并在 schema.rs 中添加相应的迁移逻辑
-pub(crate) const SCHEMA_VERSION: i32 = 24;
+pub(crate) const SCHEMA_VERSION: i32 = 25;
 
 /// 安全地序列化 JSON，避免 unwrap panic
 pub(crate) fn to_json_string<T: Serialize>(value: &T) -> Result<String, AppError> {
@@ -77,8 +67,6 @@ pub(crate) use lock_conn;
 /// rusqlite::Connection 本身不是 Sync 的，因此需要这层包装。
 pub struct Database {
     pub(crate) conn: Mutex<Connection>,
-    /// 请求日志总数缓存，见 `services::usage_stats::LogCountCache`
-    pub(crate) log_count_cache: Mutex<Option<crate::services::usage_stats::LogCountCache>>,
 }
 
 fn register_db_change_hook(conn: &Connection) {
@@ -94,11 +82,43 @@ fn register_db_change_hook(conn: &Connection) {
 }
 
 impl Database {
+    /// Copy the legacy cc-switch database into the fork's private data directory.
+    /// Existing fork data always wins, and a missing legacy database is a normal
+    /// first-run condition. The legacy source is never modified.
+    pub(crate) fn copy_legacy_database_if_needed(
+        db_path: &std::path::Path,
+        legacy_db_path: &std::path::Path,
+    ) -> Result<bool, AppError> {
+        if db_path.exists() || !legacy_db_path.exists() {
+            return Ok(false);
+        }
+
+        if let Some(parent) = db_path.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| AppError::io(parent, e))?;
+        }
+
+        std::fs::copy(legacy_db_path, db_path).map_err(|e| AppError::io(db_path, e))?;
+        log::info!(
+            "Imported legacy database {} into {}",
+            legacy_db_path.display(),
+            db_path.display()
+        );
+        Ok(true)
+    }
+
     /// 初始化数据库连接并创建表
     ///
-    /// 数据库文件位于 `~/.cc-switch/cc-switch.db`
+    /// 数据库文件位于 `~/.cc-switch-desk/cc-switch.db`
     pub fn init() -> Result<Self, AppError> {
         let db_path = get_app_config_dir().join("cc-switch.db");
+        if !db_path.exists() {
+            let legacy_db_path = crate::config::get_home_dir()
+                .join(".cc-switch")
+                .join("cc-switch.db");
+            if legacy_db_path != db_path {
+                Self::copy_legacy_database_if_needed(&db_path, &legacy_db_path)?;
+            }
+        }
         let db_exists = db_path.exists();
 
         // 确保父目录存在
@@ -121,7 +141,6 @@ impl Database {
 
         let db = Self {
             conn: Mutex::new(conn),
-            log_count_cache: Mutex::new(None),
         };
         db.create_tables()?;
 
@@ -143,18 +162,6 @@ impl Database {
         db.apply_schema_migrations()?;
         if let Err(e) = db.ensure_incremental_auto_vacuum() {
             log::warn!("Failed to ensure incremental auto-vacuum: {e}");
-        }
-        db.ensure_model_pricing_seeded()?;
-        if let Err(e) = crate::services::model_pricing::sync_local_model_pricing(&db) {
-            log::warn!("Failed to sync local model pricing file: {e}");
-        }
-
-        // Startup cleanup: prune old logs and reclaim space
-        if let Err(e) = db.cleanup_old_stream_check_logs(7) {
-            log::warn!("Startup stream_check_logs cleanup failed: {e}");
-        }
-        if let Err(e) = db.rollup_and_prune(30) {
-            log::warn!("Startup rollup_and_prune failed: {e}");
         }
         // Reclaim disk space after cleanup
         {
@@ -196,10 +203,9 @@ impl Database {
 
         let db = Self {
             conn: Mutex::new(conn),
-            log_count_cache: Mutex::new(None),
         };
         db.create_tables()?;
-        db.ensure_model_pricing_seeded()?;
+        db.apply_schema_migrations()?;
 
         Ok(db)
     }

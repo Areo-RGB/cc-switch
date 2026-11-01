@@ -458,7 +458,6 @@ pub struct PromptRoot {
 use crate::config::{copy_file, get_app_config_dir, get_app_config_path, write_json_file};
 use crate::error::AppError;
 use crate::prompt_files::prompt_file_path;
-use crate::provider::ProviderManager;
 
 /// 应用类型
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -505,11 +504,7 @@ impl AppType {
         }
     }
 
-    /// Check if this app uses additive mode
-    ///
-    /// - Switch mode (false): Only the current provider is written to live config (Claude, Codex, Gemini)
-    /// - Additive mode (true): Providers coexist in native config and can be enabled independently
-    ///   (OpenCode, OpenClaw, Hermes, Pi)
+    /// Check if this client keeps multiple native configuration entries.
     pub fn is_additive_mode(&self) -> bool {
         matches!(
             self,
@@ -522,20 +517,6 @@ impl AppType {
                 | AppType::Dsh
                 | AppType::Omp
         )
-    }
-
-    pub fn supports_local_proxy(&self) -> bool {
-        matches!(
-            self,
-            AppType::Claude | AppType::Codex | AppType::Gemini | AppType::GrokBuild
-        )
-    }
-
-    /// 有设备级的直连 / 路由模式（`live-state.json`，`mode::controller`）：本地路由的四个应用，
-    /// 加上 Claude Desktop。Desktop 经同一个路由服务转发，但没有 `proxy_config` 行、不做故障
-    /// 转移，所以不算 [`Self::supports_local_proxy`]。
-    pub fn has_route_mode(&self) -> bool {
-        self.supports_local_proxy() || matches!(self, AppType::ClaudeDesktop)
     }
 
     /// Return an iterator over all app types
@@ -658,9 +639,6 @@ impl CommonConfigSnippets {
 pub struct MultiAppConfig {
     #[serde(default = "default_version")]
     pub version: u32,
-    /// 应用管理器（claude/codex）
-    #[serde(flatten)]
-    pub apps: HashMap<String, ProviderManager>,
     /// MCP 配置（按客户端分治）
     #[serde(default)]
     pub mcp: McpRoot,
@@ -684,20 +662,8 @@ fn default_version() -> u32 {
 
 impl Default for MultiAppConfig {
     fn default() -> Self {
-        let mut apps = HashMap::new();
-        apps.insert("claude".to_string(), ProviderManager::default());
-        apps.insert("claude-desktop".to_string(), ProviderManager::default());
-        apps.insert("codex".to_string(), ProviderManager::default());
-        apps.insert("gemini".to_string(), ProviderManager::default());
-        apps.insert("grokbuild".to_string(), ProviderManager::default());
-        apps.insert("opencode".to_string(), ProviderManager::default());
-        apps.insert("openclaw".to_string(), ProviderManager::default());
-        apps.insert("hermes".to_string(), ProviderManager::default());
-        apps.insert("agy".to_string(), ProviderManager::default());
-
         Self {
             version: 2,
-            apps,
             mcp: McpRoot::default(),
             prompts: PromptRoot::default(),
             skills: SkillStore::default(),
@@ -774,14 +740,6 @@ impl MultiAppConfig {
             }
         }
 
-        // 确保 gemini 应用存在（兼容旧配置文件）
-        if !config.apps.contains_key("gemini") {
-            config
-                .apps
-                .insert("gemini".to_string(), ProviderManager::default());
-            updated = true;
-        }
-
         // 执行 MCP 迁移（v3.6.x → v3.7.0）
         let migrated = config.migrate_mcp_to_unified()?;
         if migrated {
@@ -826,24 +784,6 @@ impl MultiAppConfig {
 
         write_json_file(&config_path, self)?;
         Ok(())
-    }
-
-    /// 获取指定应用的管理器
-    pub fn get_manager(&self, app: &AppType) -> Option<&ProviderManager> {
-        self.apps.get(app.as_str())
-    }
-
-    /// 获取指定应用的管理器（可变引用）
-    pub fn get_manager_mut(&mut self, app: &AppType) -> Option<&mut ProviderManager> {
-        self.apps.get_mut(app.as_str())
-    }
-
-    /// 确保应用存在
-    pub fn ensure_app(&mut self, app: &AppType) {
-        if !self.apps.contains_key(app.as_str()) {
-            self.apps
-                .insert(app.as_str().to_string(), ProviderManager::default());
-        }
     }
 
     /// 创建默认配置并自动导入已存在的提示词文件

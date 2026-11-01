@@ -1,5 +1,6 @@
 use indexmap::IndexMap;
 use std::collections::HashMap;
+use std::sync::{Mutex, OnceLock};
 
 use crate::app_config::{AppType, McpServer};
 use crate::error::AppError;
@@ -8,6 +9,11 @@ use crate::store::AppState;
 
 /// MCP 相关业务逻辑（v3.7.0 统一结构）
 pub struct McpService;
+
+fn mcp_write_lock() -> &'static Mutex<()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+}
 
 /// 「重新同步到各应用」里单个应用的结果
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
@@ -222,7 +228,9 @@ impl McpService {
         app: AppType,
         enabled: bool,
     ) -> Result<(), AppError> {
-        let _guard = state.proxy_service.lock_switch_for_app(app.as_str()).await;
+        let _guard = mcp_write_lock()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         Self::toggle_app(state, server_id, app, enabled)
     }
 
@@ -325,10 +333,6 @@ impl McpService {
         match app {
             AppType::Claude => {
                 mcp::sync_single_server_to_claude(&Default::default(), &server.id, &server.server)?;
-                // 各官方账号目录镜像默认 .claude.json 的 mcpServers
-                crate::services::claude_account::sync_all_shared(
-                    &crate::config::get_app_config_dir(),
-                );
             }
             AppType::ClaudeDesktop => {
                 log::debug!("Claude Desktop 3P profiles do not use CC Switch MCP sync, skipping");
@@ -400,9 +404,6 @@ impl McpService {
         match app {
             AppType::Claude => {
                 mcp::remove_server_from_claude(id)?;
-                crate::services::claude_account::sync_all_shared(
-                    &crate::config::get_app_config_dir(),
-                );
             }
             AppType::ClaudeDesktop => {
                 log::debug!("Claude Desktop 3P profiles do not use CC Switch MCP sync, skipping");
@@ -461,6 +462,9 @@ impl McpService {
     /// 定向重投影，避免把无关应用的失败面（如 ~/.claude.json 坏 JSON）
     /// 牵连进目标应用的关键路径。
     pub fn sync_enabled_for_app(state: &AppState, app: &AppType) -> Result<(), AppError> {
+        let _guard = mcp_write_lock()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let servers = Self::get_all_servers(state)?;
         Self::project_servers_to_app(state, &servers, app)
     }

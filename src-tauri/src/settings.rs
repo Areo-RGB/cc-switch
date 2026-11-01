@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -9,16 +8,6 @@ use std::time::Duration;
 use crate::app_config::AppType;
 use crate::error::AppError;
 use crate::services::skill::{SkillStorageLocation, SyncMethod};
-
-/// 自定义端点配置（历史兼容，实际存储在 provider.meta.custom_endpoints）
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CustomEndpoint {
-    pub url: String,
-    pub added_at: i64,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub last_used: Option<i64>,
-}
 
 fn default_true() -> bool {
     true
@@ -306,105 +295,9 @@ impl S3SyncSettings {
     }
 }
 
-/// 本机自动迁移状态。
-///
-/// 这里记录的是本机启动时执行过的一次性迁移；标记不随数据库同步。
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
-pub struct LocalMigrations {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub codex_third_party_history_provider_bucket_v1:
-        Option<CodexThirdPartyHistoryProviderBucketMigration>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub codex_provider_template_v1: Option<CodexProviderTemplateMigration>,
-    /// 统一会话开关的官方历史迁移标记。开关关闭时会被清除，
-    /// 这样重新开启能把"关闭期间"落入 openai 桶的官方会话补迁进来。
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub codex_official_history_unify_v1: Option<CodexOfficialHistoryUnifyMigration>,
-    /// 旧版官方路由桶（`cc-switch-official`）迁回 openai 桶的标记，按 Codex 目录生效。
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub codex_legacy_official_history_bucket_v1: Option<CodexLegacyOfficialHistoryBucketMigration>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CodexThirdPartyHistoryProviderBucketMigration {
-    pub completed_at: String,
-    pub target_provider_id: String,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub source_provider_ids: Vec<String>,
-    #[serde(default)]
-    pub migrated_jsonl_files: usize,
-    #[serde(default)]
-    pub migrated_state_rows: usize,
-    #[serde(default)]
-    pub scanned_history_files: bool,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CodexProviderTemplateMigration {
-    pub completed_at: String,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub migrated_provider_ids: Vec<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CodexOfficialHistoryUnifyMigration {
-    pub completed_at: String,
-    pub target_provider_id: String,
-    #[serde(default)]
-    pub migrated_jsonl_files: usize,
-    #[serde(default)]
-    pub migrated_state_rows: usize,
-    /// 迁移时的规范化 Codex 目录。标记只对同一目录生效：
-    /// 切换 codex_config_dir 后旧标记不会挡住新目录的迁移。
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub codex_config_dir: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CodexLegacyOfficialHistoryBucketMigration {
-    pub completed_at: String,
-    pub target_provider_id: String,
-    #[serde(default)]
-    pub migrated_jsonl_files: usize,
-    #[serde(default)]
-    pub migrated_state_rows: usize,
-    /// 迁移时的规范化 Codex 目录，切换 codex_config_dir 后新目录照常迁移。
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub codex_config_dir: Option<String>,
-}
-
-/// 用量金额的显示方式。只影响显示：库里的费用一律是美元，按 `exchange_rates`
-/// 换算后显示；值的合法性（认不认得币种、汇率是否为正数）由前端兜底。
-#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
-#[serde(rename_all = "camelCase")]
-pub struct UsageDisplaySettings {
-    /// 显示币种（"USD" / "CNY" / "JPY" 等，见前端 `DISPLAY_CURRENCIES`），缺省为 USD
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub currency: Option<String>,
-    /// 1 美元折多少目标币种，按币种存：换回 USD 再换回来，填过的汇率还在
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub exchange_rates: BTreeMap<String, f64>,
-    /// 侧栏「今日」显示哪几项（"cost" / "tokens" / "requests" / "hitRate"，最多两项），
-    /// 缺省只显示金额；空列表＝不显示，所以空列表也要写进文件
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub sidebar_today_items: Option<Vec<String>>,
-    /// 请求日志的列显隐：只存用户改过的列（列 id → 是否显示），没写的按各列默认值，
-    /// 以后新加的列也按它自己的默认值出现
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub request_log_columns: BTreeMap<String, bool>,
-    /// 用量趋势图的样式（"bar" / "area"），缺省为柱形图
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub trend_chart_type: Option<String>,
-}
-
 /// 应用设置结构
 ///
-/// 存储设备级别设置，保存在本地 `~/.cc-switch/settings.json`，不随数据库同步。
+/// 存储设备级别设置，保存在本地 `~/.cc-switch-desk/settings.json`，不随数据库同步。
 /// 这确保了云同步场景下多设备可以独立运作。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -416,9 +309,6 @@ pub struct AppSettings {
     pub minimize_to_tray_on_close: bool,
     #[serde(default)]
     pub use_app_window_controls: bool,
-    /// 是否启用 Claude 插件联动
-    #[serde(default)]
-    pub enable_claude_plugin_integration: bool,
     /// 是否跳过 Claude Code 初次安装确认
     #[serde(default)]
     pub skip_claude_onboarding: bool,
@@ -428,43 +318,6 @@ pub struct AppSettings {
     /// 静默启动（程序启动时不显示主窗口，仅托盘运行）
     #[serde(default)]
     pub silent_startup: bool,
-    /// 退出时是否处于轻量模式（主窗口已销毁、只留托盘）；下次启动按它恢复。
-    /// 只经 [`set_lightweight_mode`] 写，前端全量保存不透传。
-    #[serde(default)]
-    pub lightweight_mode: bool,
-    /// 是否在主页面启用本地代理功能（默认关闭）
-    #[serde(default)]
-    pub enable_local_proxy: bool,
-    /// 是否在主页面显示 Stack 模式开关（默认关闭）。和 `enable_local_proxy` 二选一，只影响
-    /// Claude Code、Codex：它们的开关换成 Stack 模式开关，其余应用仍显示路由开关。
-    #[serde(default)]
-    pub enable_stack_mode: bool,
-    /// User has confirmed the local proxy first-run notice
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub proxy_confirmed: Option<bool>,
-    /// User has confirmed the usage query first-run notice
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub usage_confirmed: Option<bool>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub usage_dashboard_refresh_interval_ms: Option<u32>,
-    /// 用量金额的显示币种与汇率（只影响显示）
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub usage_display: Option<UsageDisplaySettings>,
-    /// 会话用量自动扫描开关（默认开启=自动模式）。关闭后停止后台定时扫描
-    /// 各客户端会话日志，仅在用户点击"立即同步"时手动扫描；只管扫描时机，
-    /// 代理接管记账与启动费用回填（不读会话文件）不受此开关影响。
-    #[serde(default = "default_session_auto_sync_enabled")]
-    pub session_auto_sync_enabled: bool,
-    /// Whether to show the failover toggle independently on the main page
-    #[serde(default)]
-    pub enable_failover_toggle: bool,
-    /// Whether to show the project profile switcher on the main page header
-    #[serde(default)]
-    pub show_profile_switcher: bool,
-    /// Show the provider search button in the provider page header (on by default;
-    /// Cmd/Ctrl+F still opens the search when it is hidden)
-    #[serde(default = "default_true")]
-    pub show_provider_search: bool,
     /// Check installed CLI tools for new versions at startup (off by default:
     /// many users do not want to chase every release).
     #[serde(default)]
@@ -473,43 +326,6 @@ pub struct AppSettings {
     /// 默认关：用托盘面板，想要原生菜单在设置里换回。
     #[serde(default)]
     pub native_tray_menu: bool,
-    /// Keep Codex ChatGPT login material in auth.json when switching to third-party providers.
-    /// Opt-in: defaults to false so third-party switches cleanly overwrite auth.json.
-    #[serde(default)]
-    pub preserve_codex_official_auth_on_switch: bool,
-    /// Run official Codex providers under the shared "custom" model_provider id
-    /// so official sessions share one resume-history bucket with third-party
-    /// providers. Opt-in: defaults to false.
-    #[serde(default)]
-    pub unify_codex_session_history: bool,
-    /// User opted in (via the enable dialog checkbox) to migrate existing
-    /// official sessions ("openai" bucket) into the shared bucket. Persisted so
-    /// a failed migration retries at startup; cleared when the toggle turns off.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub unify_codex_migrate_existing: Option<bool>,
-    /// Codex 聚合模式下，合并目录里的每个模型都改用经典子 agent 工具（`multi_agent_version`
-    /// 写 `"v1"`）。新版工具（v2）把派给子 agent 的任务加密，只有主 agent 那家后端解得开，
-    /// 主、子 agent 不在同一家时子 agent 读不到任务。默认开（代价是没有新版工具的
-    /// followup_task 等功能）。v4.0.10–4.0.12 用的是默认关的 `codexStackClassicSubagents`，
-    /// 每次保存都会写下 `false`，分不清是不是用户关的：换了键名，旧键不再读，升级后一律按开。
-    #[serde(default = "default_true")]
-    pub codex_stack_classic_tools: bool,
-    /// Codex 聚合模式下子 agent 默认用的模型（合并目录里的 slug，`ccs-<key>/<model>`）。
-    /// 不设时跟随主模型。只在这个 slug 还在合并目录里时写进 `[agents]`，否则照样跟随主模型
-    /// （成员移除后保留设置，加回来自动恢复）。
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub codex_stack_subagent_model: Option<String>,
-    /// 上面那个模型的推理强度。不在它支持的档位里时不写，用模型的默认档。
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub codex_stack_subagent_reasoning_effort: Option<String>,
-    /// Codex 聚合模式下自动审批（Auto Review）用的模型（合并目录里的 slug）。不设时用 Codex
-    /// 的默认：官方做默认那家时是官方的 `codex-auto-review`，否则由主模型自己审批。只在这个
-    /// slug 还在合并目录里时写进目录行，规则同子 agent 模型。
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub codex_stack_auto_review_model: Option<String>,
-    /// User has confirmed the failover toggle first-run notice
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub failover_confirmed: Option<bool>,
     /// User has confirmed the first-run welcome notice
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub first_run_notice_confirmed: Option<bool>,
@@ -519,15 +335,8 @@ pub struct AppSettings {
     /// Highest app version whose "what's new" summary the user has seen on this device
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub whats_new_seen_version: Option<String>,
-    /// User has confirmed the common config first-run notice
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub common_config_confirmed: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub language: Option<String>,
-    /// 按档的额度百分比写「剩余」还是「已用」（`"left"` / `"used"`，缺省为剩余）。卡片、
-    /// 授权中心和托盘一起变；余额、Credits、重置次数不受影响（#8024）
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub quota_display: Option<String>,
 
     // ===== 主页面显示的应用 =====
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -555,42 +364,6 @@ pub struct AppSettings {
     pub pi_config_dir: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub omp_config_dir: Option<String>,
-
-    // ===== 当前供应商 ID（设备级）=====
-    /// 当前 Claude 供应商 ID（本地存储，优先于数据库 is_current）
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub current_provider_claude: Option<String>,
-    /// 当前 Claude Desktop 供应商 ID（本地存储，优先于数据库 is_current）
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub current_provider_claude_desktop: Option<String>,
-    /// 当前 Codex 供应商 ID（本地存储，优先于数据库 is_current）
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub current_provider_codex: Option<String>,
-    /// 当前 Gemini 供应商 ID（本地存储，优先于数据库 is_current）
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub current_provider_gemini: Option<String>,
-    /// 当前 Grok Build 供应商 ID（本地存储，优先于数据库 is_current）
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub current_provider_grokbuild: Option<String>,
-    /// 当前 OpenCode 供应商 ID（本地存储，对 OpenCode 可能无意义，但保持结构一致）
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub current_provider_opencode: Option<String>,
-    /// 当前 OpenClaw 供应商 ID（本地存储，对 OpenClaw 可能无意义，但保持结构一致）
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub current_provider_openclaw: Option<String>,
-    /// 当前 Hermes 供应商 ID（本地存储，保持结构一致）
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub current_provider_hermes: Option<String>,
-    /// 当前 Antigravity CLI 供应商 ID
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub current_provider_agy: Option<String>,
-
-    // ===== 本地路由（设备级）=====
-    /// 写给客户端的代理主机（IP 或主机名），空/未设时按监听地址推（`0.0.0.0` → `127.0.0.1`）。
-    /// 客户端和代理不在同一个网络栈时用，比如 WSL2 NAT 模式里的会话连不到 Windows 的回环。
-    /// 只对这台机器有意义，所以不放在会随云同步覆盖的 proxy_config 表里。
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub proxy_client_host: Option<String>,
 
     // ===== Skill 同步设置 =====
     /// Skill 同步方式：auto（默认，优先 symlink）、symlink、copy
@@ -627,10 +400,6 @@ pub struct AppSettings {
     /// - Linux: "gnome-terminal" | "konsole" | "xfce4-terminal" | "alacritty" | "kitty" | "ghostty"
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub preferred_terminal: Option<String>,
-
-    // ===== 本机自动迁移状态 =====
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub local_migrations: Option<LocalMigrations>,
 }
 
 fn default_show_in_tray() -> bool {
@@ -641,47 +410,21 @@ fn default_minimize_to_tray_on_close() -> bool {
     true
 }
 
-fn default_session_auto_sync_enabled() -> bool {
-    true
-}
-
 impl Default for AppSettings {
     fn default() -> Self {
         Self {
             show_in_tray: true,
             minimize_to_tray_on_close: true,
             use_app_window_controls: false,
-            enable_claude_plugin_integration: false,
             skip_claude_onboarding: false,
             launch_on_startup: false,
             silent_startup: false,
-            lightweight_mode: false,
-            enable_local_proxy: false,
-            enable_stack_mode: false,
-            proxy_confirmed: None,
-            usage_confirmed: None,
-            usage_dashboard_refresh_interval_ms: None,
-            usage_display: None,
-            session_auto_sync_enabled: true,
-            enable_failover_toggle: false,
-            show_profile_switcher: false,
-            show_provider_search: true,
             check_tool_updates_on_startup: false,
             native_tray_menu: false,
-            preserve_codex_official_auth_on_switch: false,
-            unify_codex_session_history: false,
-            unify_codex_migrate_existing: None,
-            codex_stack_classic_tools: true,
-            codex_stack_subagent_model: None,
-            codex_stack_subagent_reasoning_effort: None,
-            codex_stack_auto_review_model: None,
-            failover_confirmed: None,
             first_run_notice_confirmed: None,
             new_layout_notice_confirmed: None,
             whats_new_seen_version: None,
-            common_config_confirmed: None,
             language: None,
-            quota_display: None,
             visible_apps: None,
             app_order: None,
             claude_config_dir: None,
@@ -693,16 +436,6 @@ impl Default for AppSettings {
             hermes_config_dir: None,
             pi_config_dir: None,
             omp_config_dir: None,
-            current_provider_claude: None,
-            current_provider_claude_desktop: None,
-            current_provider_codex: None,
-            current_provider_gemini: None,
-            current_provider_grokbuild: None,
-            current_provider_opencode: None,
-            current_provider_openclaw: None,
-            current_provider_hermes: None,
-            current_provider_agy: None,
-            proxy_client_host: None,
             skill_sync_method: SyncMethod::default(),
             skill_storage_location: SkillStorageLocation::default(),
             webdav_sync: None,
@@ -711,24 +444,13 @@ impl Default for AppSettings {
             backup_interval_hours: None,
             backup_retain_count: None,
             preferred_terminal: None,
-            local_migrations: None,
         }
     }
 }
 
 impl AppSettings {
-    /// 额度百分比按「已用」写（默认按剩余）
-    pub fn quota_shows_used(&self) -> bool {
-        self.quota_display.as_deref() == Some("used")
-    }
-
     fn settings_path() -> Option<PathBuf> {
-        // settings.json 保留用于旧版本迁移和无数据库场景
-        Some(
-            crate::config::get_home_dir()
-                .join(".cc-switch")
-                .join("settings.json"),
-        )
+        Some(crate::config::get_app_config_dir().join("settings.json"))
     }
 
     fn normalize_paths(&mut self) {
@@ -800,13 +522,6 @@ impl AppSettings {
             .as_ref()
             .map(|s| s.trim())
             .filter(|s| matches!(*s, "en" | "zh" | "zh-TW" | "ja" | "tr"))
-            .map(|s| s.to_string());
-
-        self.quota_display = self
-            .quota_display
-            .as_ref()
-            .map(|s| s.trim())
-            .filter(|s| matches!(*s, "left" | "used"))
             .map(|s| s.to_string());
 
         if let Some(sync) = &mut self.webdav_sync {
@@ -1084,140 +799,6 @@ where
     Ok(())
 }
 
-pub fn is_codex_third_party_history_provider_bucket_migrated() -> bool {
-    get_settings()
-        .local_migrations
-        .as_ref()
-        .and_then(|migrations| {
-            migrations
-                .codex_third_party_history_provider_bucket_v1
-                .as_ref()
-        })
-        .is_some_and(|m| m.scanned_history_files)
-}
-
-pub fn mark_codex_third_party_history_provider_bucket_migrated(
-    migration: CodexThirdPartyHistoryProviderBucketMigration,
-) -> Result<(), AppError> {
-    mutate_settings(|settings| {
-        let migrations = settings
-            .local_migrations
-            .get_or_insert_with(Default::default);
-        migrations.codex_third_party_history_provider_bucket_v1 = Some(migration);
-    })
-}
-
-pub fn is_codex_provider_template_migrated() -> bool {
-    get_settings()
-        .local_migrations
-        .as_ref()
-        .and_then(|migrations| migrations.codex_provider_template_v1.as_ref())
-        .is_some()
-}
-
-pub fn mark_codex_provider_template_migrated(
-    migration: CodexProviderTemplateMigration,
-) -> Result<(), AppError> {
-    mutate_settings(|settings| {
-        let migrations = settings
-            .local_migrations
-            .get_or_insert_with(Default::default);
-        migrations.codex_provider_template_v1 = Some(migration);
-    })
-}
-
-/// 统一会话迁移标记是否覆盖指定目录。标记里没记目录（不应出现的旧格式）
-/// 视为不匹配——重跑迁移是幂等的，宁可重迁也不漏迁。
-pub fn is_codex_official_history_unify_migrated_for_dir(codex_dir: &str) -> bool {
-    get_settings()
-        .local_migrations
-        .as_ref()
-        .and_then(|migrations| migrations.codex_official_history_unify_v1.as_ref())
-        .is_some_and(|migration| migration.codex_config_dir.as_deref() == Some(codex_dir))
-}
-
-/// 条件写入迁移完成标记：仅当此刻开关仍开启且迁移意愿仍在时才写。
-/// 检查与写入在 settings 写锁内原子完成，与关闭开关路径
-/// （`update_settings` / 清标记）串行，消除"迁移线程复查开关后、写标记前
-/// 用户恰好关闭开关"的竞态窗口。返回是否实际写入。
-pub fn mark_codex_official_history_unify_migrated_if_enabled(
-    migration: CodexOfficialHistoryUnifyMigration,
-) -> Result<bool, AppError> {
-    let mut written = false;
-    mutate_settings(|settings| {
-        if settings.unify_codex_session_history
-            && settings.unify_codex_migrate_existing.unwrap_or(false)
-        {
-            settings
-                .local_migrations
-                .get_or_insert_with(Default::default)
-                .codex_official_history_unify_v1 = Some(migration);
-            written = true;
-        }
-    })?;
-    Ok(written)
-}
-
-pub fn clear_codex_official_history_unify_migration() -> Result<(), AppError> {
-    mutate_settings(|settings| {
-        if let Some(migrations) = settings.local_migrations.as_mut() {
-            migrations.codex_official_history_unify_v1 = None;
-        }
-    })
-}
-
-pub fn is_codex_legacy_official_history_bucket_migrated_for_dir(codex_dir: &str) -> bool {
-    get_settings()
-        .local_migrations
-        .as_ref()
-        .and_then(|migrations| migrations.codex_legacy_official_history_bucket_v1.as_ref())
-        .is_some_and(|migration| migration.codex_config_dir.as_deref() == Some(codex_dir))
-}
-
-pub fn mark_codex_legacy_official_history_bucket_migrated(
-    migration: CodexLegacyOfficialHistoryBucketMigration,
-) -> Result<(), AppError> {
-    mutate_settings(|settings| {
-        settings
-            .local_migrations
-            .get_or_insert_with(Default::default)
-            .codex_legacy_official_history_bucket_v1 = Some(migration);
-    })
-}
-
-pub fn unify_codex_migrate_existing_requested() -> bool {
-    get_settings().unify_codex_migrate_existing.unwrap_or(false)
-}
-
-pub fn clear_codex_unify_migrate_existing() -> Result<(), AppError> {
-    mutate_settings(|settings| {
-        settings.unify_codex_migrate_existing = None;
-    })
-}
-
-/// 记下当前是否处于轻量模式（见 [`AppSettings::lightweight_mode`]），值没变就不写盘。
-pub fn set_lightweight_mode(enabled: bool) -> Result<(), AppError> {
-    if get_settings().lightweight_mode == enabled {
-        return Ok(());
-    }
-    mutate_settings(|settings| settings.lightweight_mode = enabled)
-}
-
-/// 客户端地址（见 [`AppSettings::proxy_client_host`]），去掉首尾空白；没设或为空时是 `None`。
-pub fn get_proxy_client_host() -> Option<String> {
-    get_settings()
-        .proxy_client_host
-        .map(|host| host.trim().to_string())
-        .filter(|host| !host.is_empty())
-}
-
-pub fn set_proxy_client_host(host: &str) -> Result<(), AppError> {
-    let host = host.trim();
-    mutate_settings(|settings| {
-        settings.proxy_client_host = (!host.is_empty()).then(|| host.to_string());
-    })
-}
-
 /// 从文件重新加载设置到内存缓存
 /// 用于导入配置等场景，确保内存缓存与文件同步
 pub fn reload_settings() -> Result<(), AppError> {
@@ -1299,149 +880,6 @@ pub fn get_omp_override_dir() -> Option<PathBuf> {
         .omp_config_dir
         .as_ref()
         .map(|path| resolve_override_path(path))
-}
-
-pub fn preserve_codex_official_auth_on_switch() -> bool {
-    settings_store()
-        .read()
-        .unwrap_or_else(|e| {
-            log::warn!("设置锁已毒化，使用恢复值: {e}");
-            e.into_inner()
-        })
-        .preserve_codex_official_auth_on_switch
-}
-
-pub fn unify_codex_session_history() -> bool {
-    settings_store()
-        .read()
-        .unwrap_or_else(|e| {
-            log::warn!("设置锁已毒化，使用恢复值: {e}");
-            e.into_inner()
-        })
-        .unify_codex_session_history
-}
-
-pub fn codex_stack_classic_tools() -> bool {
-    settings_store()
-        .read()
-        .unwrap_or_else(|e| {
-            log::warn!("设置锁已毒化，使用恢复值: {e}");
-            e.into_inner()
-        })
-        .codex_stack_classic_tools
-}
-
-/// Codex 聚合模式下的子 agent 设置：(模型 slug, 推理强度)，空串当作没设。
-pub fn codex_stack_subagent() -> (Option<String>, Option<String>) {
-    let settings = settings_store().read().unwrap_or_else(|e| {
-        log::warn!("设置锁已毒化，使用恢复值: {e}");
-        e.into_inner()
-    });
-    let non_empty = |value: &Option<String>| {
-        value
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(str::to_string)
-    };
-    (
-        non_empty(&settings.codex_stack_subagent_model),
-        non_empty(&settings.codex_stack_subagent_reasoning_effort),
-    )
-}
-
-/// Codex 聚合模式下的自动审批模型 slug，空串当作没设。
-pub fn codex_stack_auto_review_model() -> Option<String> {
-    settings_store()
-        .read()
-        .unwrap_or_else(|e| {
-            log::warn!("设置锁已毒化，使用恢复值: {e}");
-            e.into_inner()
-        })
-        .codex_stack_auto_review_model
-        .as_deref()
-        .map(str::trim)
-        .filter(|model| !model.is_empty())
-        .map(str::to_string)
-}
-
-// ===== 当前供应商管理函数 =====
-
-/// 获取指定应用类型的当前供应商 ID（从本地 settings 读取）
-///
-/// 这是设备级别的设置，不随数据库同步。
-/// 如果本地没有设置，调用者应该 fallback 到数据库的 `is_current` 字段。
-pub fn get_current_provider(app_type: &AppType) -> Option<String> {
-    let settings = settings_store().read().ok()?;
-    match app_type {
-        AppType::Claude => settings.current_provider_claude.clone(),
-        AppType::ClaudeDesktop => settings.current_provider_claude_desktop.clone(),
-        AppType::Codex => settings.current_provider_codex.clone(),
-        AppType::Gemini => settings.current_provider_gemini.clone(),
-        AppType::GrokBuild => settings.current_provider_grokbuild.clone(),
-        AppType::OpenCode => settings.current_provider_opencode.clone(),
-        AppType::OpenClaw => settings.current_provider_openclaw.clone(),
-        AppType::Hermes => settings.current_provider_hermes.clone(),
-        AppType::Agy => settings.current_provider_agy.clone(),
-        AppType::Pi | AppType::Mcode | AppType::Kimi | AppType::Dsh | AppType::Omp => None,
-    }
-}
-
-/// 设置指定应用类型的当前供应商 ID（保存到本地 settings）
-///
-/// 这是设备级别的设置，不随数据库同步。
-/// 传入 `None` 会清除当前供应商设置。
-pub fn set_current_provider(app_type: &AppType, id: Option<&str>) -> Result<(), AppError> {
-    let id_owned = id.map(|s| s.to_string());
-    mutate_settings(|settings| match app_type {
-        AppType::Claude => settings.current_provider_claude = id_owned.clone(),
-        AppType::ClaudeDesktop => settings.current_provider_claude_desktop = id_owned.clone(),
-        AppType::Codex => settings.current_provider_codex = id_owned.clone(),
-        AppType::Gemini => settings.current_provider_gemini = id_owned.clone(),
-        AppType::GrokBuild => settings.current_provider_grokbuild = id_owned.clone(),
-        AppType::OpenCode => settings.current_provider_opencode = id_owned.clone(),
-        AppType::OpenClaw => settings.current_provider_openclaw = id_owned.clone(),
-        AppType::Hermes => settings.current_provider_hermes = id_owned.clone(),
-        AppType::Agy => settings.current_provider_agy = id_owned.clone(),
-        AppType::Pi | AppType::Mcode | AppType::Kimi | AppType::Dsh | AppType::Omp => {}
-    })
-}
-
-/// 获取有效的当前供应商 ID（验证存在性）
-///
-/// 逻辑：
-/// 1. 从本地 settings 读取当前供应商 ID
-/// 2. 验证该 ID 在数据库中存在
-/// 3. 如果不存在则清理本地 settings，fallback 到数据库的 is_current
-///
-/// 这确保了返回的 ID 一定是有效的（在数据库中存在）。
-/// 多设备云同步场景下，配置导入后本地 ID 可能失效，此函数会自动修复。
-pub fn get_effective_current_provider(
-    db: &crate::database::Database,
-    app_type: &AppType,
-) -> Result<Option<String>, AppError> {
-    // 1. 从本地 settings 读取
-    if let Some(local_id) = get_current_provider(app_type) {
-        // 2. 验证该 ID 在数据库中存在
-        if db
-            .get_provider_by_id(&local_id, app_type.as_str())?
-            .is_some()
-        {
-            // 存在，直接返回
-            return Ok(Some(local_id));
-        }
-
-        // 3. 不存在，清理本地 settings
-        log::warn!(
-            "本地 settings 中的供应商 {} ({}) 在数据库中不存在，将清理并 fallback 到数据库",
-            local_id,
-            app_type.as_str()
-        );
-        let _ = set_current_provider(app_type, None);
-    }
-
-    // Fallback 到数据库的 is_current
-    db.get_current_provider(app_type.as_str())
 }
 
 // ===== Skill 同步方式管理函数 =====
@@ -1565,73 +1003,6 @@ pub fn update_s3_sync_status(status: WebDavSyncStatus) -> Result<(), AppError> {
 mod tests {
     use super::*;
     use crate::app_config::AppType;
-
-    #[test]
-    fn codex_stack_classic_tools_default_on_and_ignore_the_old_off_key() {
-        // v4.0.10–4.0.12 每次保存都写下默认关的旧键：不再读它，升级后按开。
-        let old: AppSettings =
-            serde_json::from_value(serde_json::json!({ "codexStackClassicSubagents": false }))
-                .expect("old settings");
-        assert!(old.codex_stack_classic_tools);
-        assert!(AppSettings::default().codex_stack_classic_tools);
-
-        let off: AppSettings =
-            serde_json::from_value(serde_json::json!({ "codexStackClassicTools": false }))
-                .expect("new settings");
-        assert!(!off.codex_stack_classic_tools);
-        let saved = serde_json::to_value(&off).expect("serialize");
-        assert_eq!(saved["codexStackClassicTools"], false);
-        assert!(saved.get("codexStackClassicSubagents").is_none());
-    }
-
-    #[test]
-    fn usage_display_round_trips_and_stays_out_of_old_files() {
-        let old: AppSettings = serde_json::from_value(serde_json::json!({})).expect("old settings");
-        assert!(old.usage_display.is_none());
-        assert!(serde_json::to_value(&old)
-            .expect("serialize")
-            .get("usageDisplay")
-            .is_none());
-
-        let saved: AppSettings = serde_json::from_value(serde_json::json!({
-            "usageDisplay": {
-                "currency": "CNY",
-                "exchangeRates": { "CNY": 6.8 },
-                "sidebarTodayItems": ["cost", "requests"],
-                "requestLogColumns": { "statusCode": true, "app": false },
-                "trendChartType": "area"
-            }
-        }))
-        .expect("usage display");
-        let display = saved.usage_display.as_ref().expect("usage display");
-        assert_eq!(display.currency.as_deref(), Some("CNY"));
-        assert_eq!(display.exchange_rates.get("CNY"), Some(&6.8));
-        assert_eq!(
-            display.sidebar_today_items.as_deref(),
-            Some(&["cost".to_string(), "requests".to_string()][..])
-        );
-        assert_eq!(display.request_log_columns.get("app"), Some(&false));
-        assert_eq!(display.trend_chart_type.as_deref(), Some("area"));
-        assert_eq!(
-            serde_json::to_value(&saved).expect("serialize")["usageDisplay"],
-            serde_json::json!({
-                "currency": "CNY",
-                "exchangeRates": { "CNY": 6.8 },
-                "sidebarTodayItems": ["cost", "requests"],
-                "requestLogColumns": { "app": false, "statusCode": true },
-                "trendChartType": "area"
-            })
-        );
-
-        // 侧栏「今日」一项都不勾＝不显示：空列表要原样写回，不能当成没设置
-        let hidden: UsageDisplaySettings =
-            serde_json::from_value(serde_json::json!({ "sidebarTodayItems": [] }))
-                .expect("hidden today label");
-        assert_eq!(
-            serde_json::to_value(&hidden).expect("serialize"),
-            serde_json::json!({ "sidebarTodayItems": [] })
-        );
-    }
 
     #[test]
     fn app_order_round_trips_as_camel_case() {
