@@ -25,6 +25,7 @@ mod openclaw_config;
 mod opencode_config;
 mod panic_hook;
 mod pi_config;
+pub mod project_backend;
 mod prompt;
 mod prompt_files;
 mod services;
@@ -293,7 +294,34 @@ pub fn run() {
             commands::delete_session,
             commands::delete_sessions,
             commands::launch_session_terminal,
+            // projects-github: Phase 3 project detail and GitHub commands.
+            commands::projects_get,
+            commands::projects_open_folder,
+            commands::projects_open_editor,
+            commands::projects_open_terminal,
+            commands::projects_scripts,
+            commands::projects_run_script,
+            commands::projects_stop_script,
+            commands::projects_agents_summary,
+            commands::git_status,
+            commands::git_branches,
+            commands::git_diff,
+            commands::git_stage,
+            commands::git_unstage,
+            commands::git_commit,
+            commands::git_checkout,
+            commands::git_remote,
+            commands::github_open,
+            commands::github_create_repo,
+            commands::github_link_push,
+            commands::github_auth_status,
+            commands::github_repo_list,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running cc-switch-desk");
+        .build(tauri::generate_context!())
+        .expect("error while building cc-switch-desk")
+        .run(|_app, event| {
+            if matches!(event, tauri::RunEvent::Exit) {
+                commands::shutdown_processes();
+            }
+        });
 }

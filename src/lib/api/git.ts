@@ -1,9 +1,15 @@
 import {
   invokeWithDevFallback,
-  DEV_GIT_BRANCHES,
-  DEV_GIT_REMOTE,
-  DEV_GIT_STATUS,
 } from "./devMocks";
+
+const DEV_EMPTY_STATUS: GitStatus = {
+  branch: "",
+  ahead: 0,
+  behind: 0,
+  entries: [],
+};
+const DEV_EMPTY_BRANCHES: GitBranches = { current: "", branches: [] };
+const DEV_EMPTY_REMOTE: GitRemote = { connected: false };
 
 export interface GitStatusEntry {
   path: string;
@@ -46,14 +52,14 @@ export const gitApi = {
     return invokeWithDevFallback<GitStatus>(
       "git_status",
       { projectId },
-      () => DEV_GIT_STATUS,
+      () => DEV_EMPTY_STATUS,
     );
   },
   branches(projectId: string) {
     return invokeWithDevFallback<GitBranches>(
       "git_branches",
       { projectId },
-      () => DEV_GIT_BRANCHES,
+      () => DEV_EMPTY_BRANCHES,
     );
   },
   stage(projectId: string, paths: string[]) {
@@ -68,6 +74,23 @@ export const gitApi = {
       "git_unstage",
       { projectId, paths },
       () => undefined,
+    );
+  },
+  diff(
+    projectId: string,
+    path: string,
+    options: { staged?: boolean; unstaged?: boolean; untracked?: boolean } = {},
+  ) {
+    return invokeWithDevFallback<string>(
+      "git_diff",
+      {
+        projectId,
+        path,
+        staged: options.staged ?? false,
+        unstaged: options.unstaged ?? true,
+        untracked: options.untracked ?? false,
+      },
+      () => "",
     );
   },
   commit(projectId: string, message: string) {
@@ -88,7 +111,7 @@ export const gitApi = {
     return invokeWithDevFallback<GitRemote>(
       "git_remote",
       { projectId },
-      () => DEV_GIT_REMOTE,
+      () => DEV_EMPTY_REMOTE,
     );
   },
   openGithub(projectId: string) {
@@ -103,7 +126,7 @@ export const gitApi = {
       "github_create_repo",
       { projectId, name, isPrivate },
       () => ({
-        ...DEV_GIT_REMOTE,
+        ...DEV_EMPTY_REMOTE,
         name,
         url: `https://github.com/example/${name}`,
       }),
@@ -114,7 +137,7 @@ export const gitApi = {
       "github_link_push",
       { projectId, remoteUrl },
       () => ({
-        ...DEV_GIT_REMOTE,
+        ...DEV_EMPTY_REMOTE,
         url: remoteUrl,
         name: remoteUrl.split("/").slice(-2).join("/"),
       }),

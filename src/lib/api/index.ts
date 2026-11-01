@@ -9,6 +9,7 @@ export { promptsApi } from "./prompts";
 export { skillsApi, skillProjectApi } from "./skills";
 export { projectsApi } from "./projects";
 export { gitApi } from "./git";
+export { githubApi } from "./github";
 export { videoApi } from "./video";
 export { usageApi } from "./usage";
 export { subscriptionApi } from "./subscription";

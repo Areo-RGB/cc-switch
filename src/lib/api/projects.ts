@@ -2,8 +2,6 @@ import {
   invokeWithDevFallback,
   DEV_PROJECTS,
   devAgentsFor,
-  devDetailsFor,
-  devScriptsFor,
 } from "./devMocks";
 
 export type ProjectKind = "git" | "folder" | "workspace";
@@ -77,7 +75,15 @@ export const projectsApi = {
     return invokeWithDevFallback<ProjectDetails>(
       "projects_get",
       projectArgs(projectId),
-      () => devDetailsFor(projectId),
+      () => {
+        const project =
+          DEV_PROJECTS.find((item) => item.id === projectId) ?? DEV_PROJECTS[0];
+        return {
+          project,
+          readme: "Project workspace",
+          packageManager: project.name === "desktopcc" ? "cargo" : "pnpm",
+        };
+      },
     );
   },
   addFolder(path: string) {
@@ -126,7 +132,9 @@ export const projectsApi = {
     return invokeWithDevFallback<ProjectScript[]>(
       "projects_scripts",
       projectArgs(projectId),
-      () => devScriptsFor(projectId),
+      () =>
+        DEV_PROJECTS.find((project) => project.id === projectId)?.scripts ??
+        [],
     );
   },
   runScript(projectId: string, scriptId: string) {

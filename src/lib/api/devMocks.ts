@@ -4,10 +4,7 @@ import type { InstalledSkill } from "./skills";
 import type {
   AgentsSummary,
   Project,
-  ProjectScript,
-  ProjectDetails,
 } from "./projects";
-import type { GitBranches, GitRemote, GitStatus } from "./git";
 import type { VideoClip, VideoEntry, VideoLibrary } from "./video";
 
 /**
@@ -120,18 +117,6 @@ export const DEV_PROJECTS: Project[] = [
     },
   },
 ];
-
-export const DEV_PROJECT_DETAILS: Record<string, ProjectDetails> =
-  Object.fromEntries(
-    DEV_PROJECTS.map((project) => [
-      project.id,
-      {
-        project,
-        readme: "Project workspace",
-        packageManager: project.name === "desktopcc" ? "cargo" : "pnpm",
-      },
-    ]),
-  );
 
 export const DEV_MCP_SERVERS: McpServersMap = {
   filesystem: {
@@ -267,42 +252,6 @@ export const DEV_SKILLS: InstalledSkill[] = [
   },
 ];
 
-export const DEV_GIT_STATUS: GitStatus = {
-  branch: "main",
-  ahead: 1,
-  behind: 0,
-  entries: [
-    { path: "src/App.tsx", status: "modified", staged: true },
-    {
-      path: "src/components/project/ProjectPage.tsx",
-      status: "new",
-      staged: false,
-    },
-    { path: "src/lib/api/projects.ts", status: "new", staged: false },
-    { path: "docs/project-ui-commands.md", status: "new", staged: false },
-  ],
-};
-
-export const DEV_GIT_BRANCHES: GitBranches = {
-  current: "main",
-  branches: [
-    { name: "main", remote: "origin/main", current: true },
-    {
-      name: "feature/project-ui",
-      remote: "origin/feature/project-ui",
-      current: false,
-    },
-    { name: "release/4.1", remote: "origin/release/4.1", current: false },
-  ],
-};
-
-export const DEV_GIT_REMOTE: GitRemote = {
-  connected: true,
-  url: "https://github.com/farion1231/cc-switch",
-  name: "farion1231/cc-switch",
-  defaultBranch: "main",
-};
-
 const devThumbnail = (background: string, accent: string, label: string) =>
   `data:image/svg+xml,${encodeURIComponent(
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 540">
@@ -387,9 +336,3 @@ export const DEV_VIDEO_LIBRARY: VideoLibrary = {
 export const devAgentsFor = (projectId: string): AgentsSummary =>
   DEV_PROJECTS.find((project) => project.id === projectId)?.agents ??
   DEV_PROJECTS[0].agents;
-
-export const devScriptsFor = (projectId: string): ProjectScript[] =>
-  DEV_PROJECTS.find((project) => project.id === projectId)?.scripts ?? [];
-
-export const devDetailsFor = (projectId: string): ProjectDetails =>
-  DEV_PROJECT_DETAILS[projectId] ?? DEV_PROJECT_DETAILS[DEV_PROJECTS[0].id];

@@ -463,6 +463,36 @@ function Scripts({
   scripts: Project["scripts"];
   onAction: (action: () => Promise<unknown>, message: string) => void;
 }) {
+  const queryClient = useQueryClient();
+  const [processIds, setProcessIds] = useState<Record<string, string>>({});
+
+  const runOrStop = (script: Project["scripts"][number]) => {
+    const action = async () => {
+      if (script.running) {
+        await projectsApi.stopScript(
+          projectId,
+          processIds[script.id] ?? script.id,
+        );
+        setProcessIds((current) => {
+          const next = { ...current };
+          delete next[script.id];
+          return next;
+        });
+      } else {
+        const process = await projectsApi.runScript(projectId, script.id);
+        setProcessIds((current) => ({ ...current, [script.id]: process.id }));
+      }
+      await queryClient.invalidateQueries({
+        queryKey: ["project", "scripts", projectId],
+      });
+    };
+
+    onAction(
+      action,
+      script.running ? `${script.name} stopped` : `${script.name} started`,
+    );
+  };
+
   return (
     <Card>
       <CardHeader className="p-5 pb-3">
@@ -496,17 +526,7 @@ function Scripts({
               aria-label={
                 script.running ? `Stop ${script.name}` : `Run ${script.name}`
               }
-              onClick={() =>
-                onAction(
-                  () =>
-                    script.running
-                      ? projectsApi.stopScript(projectId, script.id)
-                      : projectsApi.runScript(projectId, script.id),
-                  script.running
-                    ? `${script.name} stopped`
-                    : `${script.name} started`,
-                )
-              }
+              onClick={() => runOrStop(script)}
             >
               {script.running ? (
                 <Square className="h-3.5 w-3.5" />

@@ -77,6 +77,7 @@ interface GitRemote {
 | -------------------- | --------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
 | `git_status`         | `{ projectId: string }`                                   | `GitStatus`                                                                                 |
 | `git_branches`       | `{ projectId: string }`                                   | `{ current: string; branches: Array<{ name: string; remote?: string; current: boolean }> }` |
+| `git_diff`           | `{ projectId: string; path: string; staged: boolean; unstaged: boolean; untracked: boolean }` | `string` |
 | `git_stage`          | `{ projectId: string; paths: string[] }`                  | `void`                                                                                      |
 | `git_unstage`        | `{ projectId: string; paths: string[] }`                  | `void`                                                                                      |
 | `git_commit`         | `{ projectId: string; message: string }`                  | `{ hash: string; message: string }`                                                         |
@@ -85,6 +86,8 @@ interface GitRemote {
 | `github_open`        | `{ projectId: string }`                                   | `void`                                                                                      |
 | `github_create_repo` | `{ projectId: string; name: string; isPrivate: boolean }` | `GitRemote`                                                                                 |
 | `github_link_push`   | `{ projectId: string; remoteUrl: string }`                | `GitRemote`                                                                                 |
+| `github_auth_status` | `{}`                                                       | `{ authenticated: boolean; account?: string; host?: string; error?: string }`               |
+| `github_repo_list`   | `{ owner?: string; query?: string; visibility?: string; sort?: string }` | `GitHubRepo[]` |
 
 ## Project-scoped MCP and Skills
 
