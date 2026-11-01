@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 
 import type { AppId } from "@/lib/api/types";
+import { invokeWithDevFallback, DEV_SKILLS } from "./devMocks";
 
 export type AppType =
   | "claude"
@@ -370,5 +371,47 @@ export const skillsApi = {
     currentApp: AppId,
   ): Promise<ZipInstallResult> {
     return await invoke("install_skills_from_zip", { filePath, currentApp });
+  },
+};
+
+/** Project-local projection of the Skills catalog. */
+export const skillProjectApi = {
+  async list(projectId: string): Promise<InstalledSkill[]> {
+    return await invokeWithDevFallback(
+      "skill_project_list",
+      { projectId },
+      () => DEV_SKILLS,
+    );
+  },
+  async toggle(
+    projectId: string,
+    skillId: string,
+    client: AppId,
+    enabled: boolean,
+  ): Promise<void> {
+    await invokeWithDevFallback<void>(
+      "skill_project_toggle",
+      { projectId, skillId, client, enabled },
+      () => undefined,
+    );
+  },
+  async bulkToggle(
+    projectId: string,
+    skillIds: string[],
+    client: AppId,
+    enabled: boolean,
+  ): Promise<void> {
+    await invokeWithDevFallback<void>(
+      "skill_project_bulk_toggle",
+      { projectId, skillIds, client, enabled },
+      () => undefined,
+    );
+  },
+  async resync(projectId: string): Promise<void> {
+    await invokeWithDevFallback<void>(
+      "skill_project_resync",
+      { projectId },
+      () => undefined,
+    );
   },
 };

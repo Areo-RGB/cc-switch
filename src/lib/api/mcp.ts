@@ -7,6 +7,7 @@ import type {
   McpStatus,
 } from "@/types";
 import type { AppId } from "./types";
+import { invokeWithDevFallback, DEV_MCP_SERVERS } from "./devMocks";
 
 export const mcpApi = {
   async getStatus(): Promise<McpStatus> {
@@ -133,6 +134,48 @@ export const mcpApi = {
    */
   async resyncToApps(apps?: AppId[]): Promise<McpAppSyncOutcome[]> {
     return await invoke("resync_mcp_to_apps", { apps: apps ?? null });
+  },
+};
+
+/** Project-local projection of the catalog. Global MCP APIs above remain for compatibility. */
+export const mcpProjectApi = {
+  async list(projectId: string): Promise<McpServersMap> {
+    return await invokeWithDevFallback(
+      "mcp_project_list",
+      { projectId },
+      () => DEV_MCP_SERVERS,
+    );
+  },
+  async toggle(
+    projectId: string,
+    serverId: string,
+    client: AppId,
+    enabled: boolean,
+  ): Promise<void> {
+    await invokeWithDevFallback<void>(
+      "mcp_project_toggle",
+      { projectId, serverId, client, enabled },
+      () => undefined,
+    );
+  },
+  async bulkToggle(
+    projectId: string,
+    serverIds: string[],
+    client: AppId,
+    enabled: boolean,
+  ): Promise<void> {
+    await invokeWithDevFallback<void>(
+      "mcp_project_bulk_toggle",
+      { projectId, serverIds, client, enabled },
+      () => undefined,
+    );
+  },
+  async resync(projectId: string): Promise<void> {
+    await invokeWithDevFallback<void>(
+      "mcp_project_resync",
+      { projectId },
+      () => undefined,
+    );
   },
 };
 
